@@ -1,0 +1,73 @@
+x-app-build: &app-build
+  context: .
+  args:
+    INSTALL_LSTM: ${INSTALL_LSTM:-false}
+
+x-common-environment: &common-environment
+  OPTIONS_DB_PATH: /app/runtime/options_market.db
+  MODEL_DIR: /app/runtime/models
+  DEFAULT_SYMBOLS: ${DEFAULT_SYMBOLS:-SPY,QQQ,NVDA}
+  EXPIRATION_COUNT: ${EXPIRATION_COUNT:-2}
+  STRIKE_RANGE_PERCENT: ${STRIKE_RANGE_PERCENT:-0.10}
+  COLLECTION_INTERVAL_SECONDS: ${COLLECTION_INTERVAL_SECONDS:-60}
+  CLOSED_MARKET_SLEEP_SECONDS: ${CLOSED_MARKET_SLEEP_SECONDS:-300}
+  AUTO_TRAIN: ${AUTO_TRAIN:-true}
+  ENABLE_LSTM: ${ENABLE_LSTM:-false}
+  API_KEY: ${API_KEY:-}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8501}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+services:
+  api:
+    build: *app-build
+    init: true
+    restart: unless-stopped
+    environment: *common-environment
+    ports:
+      - "8000:8000"
+    volumes:
+      - options_runtime:/app/runtime
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 20s
+      timeout: 6s
+      retries: 5
+      start_period: 20s
+
+  dashboard:
+    build: *app-build
+    init: true
+    restart: unless-stopped
+    command: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    environment:
+      <<: *common-environment
+      API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    volumes:
+      - options_runtime:/app/runtime
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=5)"]
+      interval: 20s
+      timeout: 6s
+      retries: 5
+      start_period: 30s
+
+  scheduler:
+    build: *app-build
+    init: true
+    restart: unless-stopped
+    command: ["python", "-m", "data_collector.scheduler"]
+    environment: *common-environment
+    volumes:
+      - options_runtime:/app/runtime
+    depends_on:
+      api:
+        condition: service_healthy
+    stop_grace_period: 20s
+
+volumes:
+  options_runtime:

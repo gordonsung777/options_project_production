@@ -1,0 +1,13 @@
+numpy
+pandas
+scikit-learn
+joblib
+yfinance
+xgboost
+pandas-market-calendars
+fastapi
+uvicorn[standard]
+streamlit
+plotly
+httpx
+
