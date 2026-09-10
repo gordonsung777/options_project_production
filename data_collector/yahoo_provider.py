@@ -95,14 +95,35 @@ def fetch_option_chain(
     expiration_count: int,
     strike_range_percent: float,
 ) -> pd.DataFrame:
-    expirations = list(
-        _retry(f"option expirations for {symbol}", lambda: stock.options)
-    )
-    if not expirations:
-        raise MarketDataError(
-            f"Yahoo returned no listed option expirations for {symbol}."
+    def _load_expirations() -> tuple[yf.Ticker, list[str]]:
+    candidate = yf.Ticker(symbol)
+    values = list(candidate.options)
+
+    if not values:
+        raise RuntimeError(
+            f"Yahoo returned an empty option-expiration response for {symbol}"
         )
 
+    return candidate, values
+
+
+try:
+    stock, expirations = _retry(
+        f"option expirations for {symbol}",
+        _load_expirations,
+        attempts=4,
+    )
+except MarketDataError as error:
+    raise MarketDataError(
+        f"Yahoo options are temporarily unavailable for {symbol}. "
+        "Yahoo may be rate-limiting or rejecting the backend cloud address."
+    ) from error
+
+
+
+
+
+    
     snapshot_time = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     lower_strike = stock_price * (1 - strike_range_percent)
     upper_strike = stock_price * (1 + strike_range_percent)
